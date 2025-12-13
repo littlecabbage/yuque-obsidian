@@ -1,0 +1,5 @@
+{
+  "name": "Obsidian Reader (Yuque Style)",
+  "description": "一个仿语雀风格的 Markdown 阅读器，可直接读取本地 Obsidian 仓库。",
+  "requestFramePermissions": []
+}
