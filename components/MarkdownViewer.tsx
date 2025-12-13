@@ -1,38 +1,144 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { FileText, ExternalLink, AlertCircle } from 'lucide-react';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { prism } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { FileText, ExternalLink, AlertCircle, List, Tag, Calendar, User, AlignLeft } from 'lucide-react';
 
 interface MarkdownViewerProps {
   content: string;
   fileName: string;
   lastModified?: number;
   onLinkClick: (href: string) => void;
-  onResolveImage: (src: string) => Promise<string | null>; // 异步获取图片URL
+  onResolveImage: (src: string) => Promise<string | null>;
 }
+
+interface OutlineItem {
+  id: string;
+  text: string;
+  level: number;
+}
+
+// 工具函数：生成标准化的 ID
+const generateId = (text: string) => {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\u4e00-\u9fa5]+/g, '-') // 替换非字母数字和非中文为短横线
+    .replace(/^-+|-+$/g, '') // 去除首尾短横线
+    || 'heading'; // 防止空 ID
+};
+
+// 工具函数：去除 Markdown 语法，获取纯文本
+const stripMarkdown = (text: string) => {
+  return text
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // 移除图片
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // 链接转文字
+    .replace(/(\*\*|__)(.*?)\1/g, '$2') // 粗体
+    .replace(/(\*|_)(.*?)\1/g, '$2') // 斜体
+    .replace(/`([^`]+)`/g, '$1') // 行内代码
+    .trim();
+};
+
+// 简单的 YAML 解析器
+const parseFrontmatter = (text: string) => {
+  const pattern = /^---\n([\s\S]*?)\n---/;
+  const match = text.match(pattern);
+  
+  if (!match) {
+    return { metadata: null, content: text };
+  }
+
+  const yamlBlock = match[1];
+  const content = text.replace(pattern, '').trim(); // 移除 header 后的内容
+  const metadata: Record<string, any> = {};
+
+  yamlBlock.split('\n').forEach(line => {
+    const parts = line.split(':');
+    if (parts.length >= 2) {
+      const key = parts[0].trim();
+      let value = parts.slice(1).join(':').trim();
+      
+      // 处理数组 [a, b]
+      if (value.startsWith('[') && value.endsWith(']')) {
+        value = value.slice(1, -1).split(',').map((v: string) => v.trim()) as any;
+      }
+      metadata[key] = value;
+    }
+  });
+
+  return { metadata, content };
+};
 
 const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content, fileName, lastModified, onLinkClick, onResolveImage }) => {
   const displayTitle = fileName.replace(/\.md$/i, '');
+  const [outline, setOutline] = useState<OutlineItem[]>([]);
+  const [activeId, setActiveId] = useState<string>('');
 
-  // 预处理 Wiki Links
-  // [[Link]] -> [Link](wikilink:Link)
-  // [[Link|Alias]] -> [Alias](wikilink:Link)
-  // ![[Image.png]] -> ![Image.png](wikiimage:Image.png)
-  const processedContent = useMemo(() => {
-    if (!content) return '';
-    return content.replace(/(!?)\[\[(.*?)(?:\|(.*?))?\]\]/g, (match, isEmbed, link, alias) => {
+  // 解析 Frontmatter 和 Wiki Links
+  const { metadata, processedContent } = useMemo(() => {
+    if (!content) return { metadata: null, processedContent: '' };
+    
+    // 1. 分离元数据
+    const { metadata, content: rawBody } = parseFrontmatter(content);
+
+    // 2. 处理双链
+    const processed = rawBody.replace(/(!?)\[\[(.*?)(?:\|(.*?))?\]\]/g, (match, isEmbed, link, alias) => {
       const target = link.trim();
       const text = alias ? alias.trim() : target;
       if (isEmbed) {
-        // 图片引用
         return `![${text}](wikiimage:${target})`;
       } else {
-        // 页面引用
         return `[${text}](wikilink:${target})`;
       }
     });
+
+    return { metadata, processedContent: processed };
   }, [content]);
 
-  // 自定义图片组件，处理异步加载
+  // 提取大纲
+  useEffect(() => {
+    if (!processedContent) {
+      setOutline([]);
+      return;
+    }
+
+    // 简单的正则匹配标题，但这需要处理代码块中的 # 符号，目前使用简单假设
+    // 如果需要更精确，应该使用 remark 插件链
+    const headingRegex = /^(#{1,4})\s+(.+)$/gm;
+    const items: OutlineItem[] = [];
+    let match;
+    
+    while ((match = headingRegex.exec(processedContent)) !== null) {
+      const level = match[1].length;
+      const rawText = match[2].trim();
+      const text = stripMarkdown(rawText);
+      const id = generateId(text);
+      items.push({ id, text, level });
+    }
+    setOutline(items);
+  }, [processedContent]);
+
+  // 监听滚动以高亮大纲
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setActiveId(entry.target.id);
+          }
+        });
+      },
+      { rootMargin: '-10% 0px -80% 0px' }
+    );
+
+    outline.forEach((item) => {
+      const el = document.getElementById(item.id);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [outline]);
+
+
   const WikiImage = ({ src, alt, ...props }: any) => {
     const [imgUrl, setImgUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
@@ -42,7 +148,6 @@ const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content, fileName, last
       const load = async () => {
         if (src && src.startsWith('wikiimage:')) {
           const rawName = src.replace('wikiimage:', '');
-          // 必须解码，因为 ReactMarkdown 可能会对 src 属性进行 URL 编码
           const imageName = decodeURIComponent(rawName);
           const url = await onResolveImage(imageName);
           if (isMounted) {
@@ -50,7 +155,6 @@ const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content, fileName, last
             setLoading(false);
           }
         } else {
-          // 普通外部链接
           setImgUrl(src);
           setLoading(false);
         }
@@ -59,24 +163,40 @@ const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content, fileName, last
       return () => { isMounted = false; };
     }, [src]);
 
-    if (loading) {
-      return <div className="bg-gray-100 rounded-lg h-32 flex items-center justify-center text-gray-400 text-sm animate-pulse">加载图片中...</div>;
-    }
-
-    if (!imgUrl) {
-       return (
-         <div className="bg-red-50 border border-red-100 rounded-lg p-4 text-red-400 text-sm flex items-center justify-center">
-            <AlertCircle size={16} className="mr-2" /> 图片无法加载: {alt}
-         </div>
-       );
-    }
+    if (loading) return <div className="bg-gray-50 h-32 rounded-lg flex items-center justify-center text-xs text-gray-400">加载中...</div>;
+    if (!imgUrl) return <div className="text-red-400 text-xs flex items-center bg-red-50 p-2 rounded"><AlertCircle size={12} className="mr-1"/> 图片失效</div>;
 
     return (
-      <span className="block my-6">
-        <img src={imgUrl} className="max-w-full h-auto rounded-lg shadow-sm border border-gray-100 mx-auto" alt={alt} {...props} />
-        {alt && !alt.endsWith('.png') && !alt.endsWith('.jpg') && <span className="block text-center text-sm text-gray-400 mt-2">{alt}</span>}
+      <span className="block my-4">
+        <img src={imgUrl} className="max-w-full h-auto rounded shadow-sm border border-gray-100 mx-auto" alt={alt} {...props} />
+        {alt && !alt.endsWith('.png') && <span className="block text-center text-xs text-gray-400 mt-2">{alt}</span>}
       </span>
     );
+  };
+
+  const HeadingRenderer = ({ level, children, ...props }: any) => {
+     // 递归获取纯文本内容用于生成 ID
+     const getText = (node: any): string => {
+        if (typeof node === 'string') return node;
+        if (Array.isArray(node)) return node.map(getText).join('');
+        if (node.props && node.props.children) return getText(node.props.children);
+        return '';
+     };
+     
+     const text = getText(children);
+     const id = generateId(text);
+     const Tag = `h${level}` as React.ElementType;
+     
+     const styles = ({
+         1: "text-3xl font-bold mt-10 mb-6 pb-2 border-b border-gray-100",
+         2: "text-2xl font-bold mt-8 mb-4",
+         3: "text-xl font-bold mt-6 mb-3",
+         4: "text-lg font-bold mt-4 mb-2",
+         5: "font-bold mt-3",
+         6: "font-bold mt-3 text-gray-500"
+     } as any)[level] || "";
+
+     return <Tag id={id} className={`scroll-mt-20 ${styles}`} {...props}>{children}</Tag>;
   };
 
   if (!content) {
@@ -89,83 +209,183 @@ const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content, fileName, last
   }
 
   return (
-    <div className="w-full max-w-[850px] mx-auto px-8 py-12 animate-fade-in">
-      {/* 文档标题区 */}
-      <div className="mb-8 border-b border-gray-100 pb-6">
-        <h1 className="text-4xl font-bold text-[#262626] mb-4 leading-tight">
-          {displayTitle}
-        </h1>
-        {lastModified && (
-          <div className="text-xs text-gray-400 flex items-center space-x-4">
-             <span>最后编辑于 {new Date(lastModified).toLocaleDateString()}</span>
-          </div>
+    <div className="flex h-full animate-fade-in relative">
+        {/* 文档阅读主体区域 */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
+            <div className="w-full max-w-[850px] mx-auto px-8 py-12">
+                
+                {/* 标题区 */}
+                <div className="mb-6 border-b border-gray-100 pb-6">
+                    <h1 className="text-4xl font-bold text-[#262626] mb-4 leading-tight">{displayTitle}</h1>
+                    
+                    {/* 元信息展示 (Metadata) */}
+                    {metadata && (
+                        <div className="flex flex-wrap gap-y-2 gap-x-4 text-sm text-gray-500 bg-gray-50 p-3 rounded-lg border border-gray-100 mb-4">
+                            {metadata.date && (
+                                <div className="flex items-center">
+                                    <Calendar size={14} className="mr-1.5 opacity-70"/>
+                                    <span>{metadata.date}</span>
+                                </div>
+                            )}
+                            {metadata.author && (
+                                <div className="flex items-center">
+                                    <User size={14} className="mr-1.5 opacity-70"/>
+                                    <span>{metadata.author}</span>
+                                </div>
+                            )}
+                            {metadata.tags && (
+                                <div className="flex items-center">
+                                    <Tag size={14} className="mr-1.5 opacity-70"/>
+                                    <div className="flex gap-1">
+                                        {(Array.isArray(metadata.tags) ? metadata.tags : [metadata.tags]).map((tag: string) => (
+                                            <span key={tag} className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded text-xs">
+                                                #{tag}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {/* 显示其他未专门处理的字段 */}
+                            {Object.entries(metadata).map(([key, value]) => {
+                                if (['date', 'author', 'tags'].includes(key)) return null;
+                                return (
+                                    <div key={key} className="flex items-center">
+                                        <span className="font-medium mr-1 opacity-70">{key}:</span>
+                                        <span>{String(value)}</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
+
+                    {!metadata && lastModified && (
+                         <div className="text-xs text-gray-400">
+                            最后编辑于 {new Date(lastModified).toLocaleDateString()}
+                         </div>
+                    )}
+                </div>
+
+                {/* 正文内容 */}
+                <div className="text-[#262626] leading-relaxed text-[16px]">
+                    <ReactMarkdown
+                    components={{
+                        h1: (props) => <HeadingRenderer level={1} {...props} />,
+                        h2: (props) => <HeadingRenderer level={2} {...props} />,
+                        h3: (props) => <HeadingRenderer level={3} {...props} />,
+                        h4: (props) => <HeadingRenderer level={4} {...props} />,
+                        p: ({ node, ...props }) => <p className="mb-4 leading-7 text-justify text-[#262626]" {...props} />,
+                        ul: ({ node, ...props }) => <ul className="list-disc pl-6 mb-4 space-y-1 text-gray-700" {...props} />,
+                        ol: ({ node, ...props }) => <ol className="list-decimal pl-6 mb-4 space-y-1 text-gray-700" {...props} />,
+                        blockquote: ({ node, ...props }) => (
+                            <blockquote className="border-l-4 border-[#00b96b] pl-4 py-2 my-4 bg-green-50/30 text-gray-600 rounded-r text-sm italic" {...props} />
+                        ),
+                        code: ({ node, className, children, ...props }) => {
+                            const match = /language-(\w+)/.exec(className || '');
+                            const isInline = !match && !String(children).includes('\n');
+                            
+                            // 排除 ref 属性，因为 SyntaxHighlighter 不支持 react-markdown 传递的 HTMLElement ref
+                            const { ref, ...rest } = props as any;
+
+                            return isInline ? (
+                                <code className="bg-gray-100 text-[#d4380d] px-1.5 py-0.5 rounded text-sm font-mono mx-1" {...props}>
+                                    {children}
+                                </code>
+                            ) : (
+                                <div className="my-4 rounded-lg overflow-hidden border border-gray-200 shadow-sm text-sm">
+                                    <div className="bg-gray-50 px-3 py-1.5 border-b border-gray-200 text-xs text-gray-500 font-mono flex items-center">
+                                        <div className="flex gap-1.5 mr-2">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-red-400/20"></div>
+                                            <div className="w-2.5 h-2.5 rounded-full bg-yellow-400/20"></div>
+                                            <div className="w-2.5 h-2.5 rounded-full bg-green-400/20"></div>
+                                        </div>
+                                        {match ? match[1] : 'text'}
+                                    </div>
+                                    <SyntaxHighlighter
+                                        style={prism as any}
+                                        language={match ? match[1] : 'text'}
+                                        PreTag="div"
+                                        customStyle={{ margin: 0, borderRadius: 0, backgroundColor: '#fdfdfd' }}
+                                        {...rest}
+                                    >
+                                        {String(children).replace(/\n$/, '')}
+                                    </SyntaxHighlighter>
+                                </div>
+                            );
+                        },
+                        a: ({ node, href, children, ...props }) => {
+                            const isWiki = href?.startsWith('wikilink:');
+                            return (
+                                <a 
+                                href={href}
+                                onClick={(e) => {
+                                    if (isWiki && href) {
+                                        e.preventDefault();
+                                        onLinkClick(href);
+                                    }
+                                }}
+                                className={`cursor-pointer transition-colors ${isWiki ? 'text-[#00b96b] hover:text-[#009456] font-medium' : 'text-[#1677ff] hover:underline'}`}
+                                {...props}
+                                >
+                                {children}
+                                {!isWiki && <ExternalLink size={12} className="inline ml-1 opacity-50" />}
+                                </a>
+                            );
+                        },
+                        img: WikiImage,
+                        table: ({ node, ...props }) => (
+                            <div className="overflow-x-auto my-6 rounded-lg border border-gray-200">
+                                <table className="min-w-full divide-y divide-gray-200 text-sm" {...props} />
+                            </div>
+                        ),
+                        th: ({ node, ...props }) => <th className="bg-gray-50 px-4 py-3 font-semibold text-left text-gray-700" {...props} />,
+                        td: ({ node, ...props }) => <td className="px-4 py-3 border-t border-gray-100 text-gray-600" {...props} />,
+                    }}
+                    >
+                    {processedContent}
+                    </ReactMarkdown>
+                </div>
+                <div className="h-32"></div>
+            </div>
+        </div>
+
+        {/* 右侧大纲栏 (Desktop Only) - 使用 lg:block 适配更多屏幕 */}
+        {outline.length > 0 && (
+            <div className="hidden lg:block w-64 border-l border-gray-100 bg-[#fafafa] flex-shrink-0">
+                <div className="sticky top-0 h-full overflow-y-auto custom-scrollbar">
+                    <div className="p-4">
+                        <div className="flex items-center text-gray-500 mb-4 px-2">
+                            <AlignLeft size={16} className="mr-2"/>
+                            <span className="text-xs font-bold uppercase tracking-wider">大纲</span>
+                        </div>
+                        <ul className="space-y-0.5">
+                            {outline.map((item) => (
+                                <li key={item.id}>
+                                    <a 
+                                        href={`#${item.id}`}
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth' });
+                                            setActiveId(item.id);
+                                        }}
+                                        className={`block text-sm py-1.5 pr-2 transition-colors border-l-2
+                                            ${item.level === 1 ? 'pl-3 font-medium' : ''}
+                                            ${item.level === 2 ? 'pl-6' : ''}
+                                            ${item.level === 3 ? 'pl-9' : ''}
+                                            ${item.level >= 4 ? 'pl-11' : ''}
+                                            ${activeId === item.id 
+                                                ? 'border-[#00b96b] text-[#00b96b] bg-white shadow-sm' 
+                                                : 'border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300'}
+                                        `}
+                                    >
+                                        <span className="truncate block">{item.text}</span>
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            </div>
         )}
-      </div>
-
-      <div className="space-y-6 text-[#262626] leading-relaxed text-[16px]">
-        <ReactMarkdown
-          components={{
-            h1: ({ node, ...props }) => <h1 className="text-3xl font-bold mt-10 mb-6 pb-2 border-b border-gray-100" {...props} />,
-            h2: ({ node, ...props }) => <h2 className="text-2xl font-bold mt-10 mb-4" {...props} />,
-            h3: ({ node, ...props }) => <h3 className="text-xl font-bold mt-8 mb-3" {...props} />,
-            h4: ({ node, ...props }) => <h4 className="text-lg font-bold mt-6 mb-2" {...props} />,
-            p: ({ node, ...props }) => <p className="mb-4 leading-7 text-justify text-[#262626]" {...props} />,
-            ul: ({ node, ...props }) => <ul className="list-disc pl-6 mb-4 space-y-1 text-gray-700" {...props} />,
-            ol: ({ node, ...props }) => <ol className="list-decimal pl-6 mb-4 space-y-1 text-gray-700" {...props} />,
-            li: ({ node, ...props }) => <li className="pl-1" {...props} />,
-            blockquote: ({ node, ...props }) => (
-              <blockquote className="border-l-4 border-gray-200 pl-4 py-1 my-4 bg-gray-50 text-gray-600 italic rounded-r" {...props} />
-            ),
-            code: ({ node, className, children, ...props }) => {
-              const match = /language-(\w+)/.exec(className || '');
-              const isInline = !match && !String(children).includes('\n');
-              return isInline ? (
-                <code className="bg-gray-100 text-[#d4380d] px-1.5 py-0.5 rounded text-sm font-mono mx-1" {...props}>
-                  {children}
-                </code>
-              ) : (
-                <pre className="bg-[#f8f8f8] p-4 rounded-lg overflow-x-auto my-4 text-sm font-mono leading-6 border border-gray-100 text-gray-800">
-                  <code className={className} {...props}>
-                    {children}
-                  </code>
-                </pre>
-              );
-            },
-            a: ({ node, href, children, ...props }) => {
-              const isWiki = href?.startsWith('wikilink:');
-              return (
-                <a 
-                  href={href}
-                  onClick={(e) => {
-                    if (isWiki && href) {
-                      e.preventDefault();
-                      onLinkClick(href);
-                    }
-                  }}
-                  className={`cursor-pointer transition-colors ${isWiki ? 'text-[#00b96b] hover:text-[#009456] border-b border-[#00b96b]/30 hover:border-[#00b96b]' : 'text-[#1677ff] hover:underline'}`}
-                  {...props}
-                >
-                  {children}
-                  {!isWiki && <ExternalLink size={12} className="inline ml-1 opacity-50" />}
-                </a>
-              );
-            },
-            img: WikiImage,
-            hr: ({ node, ...props }) => <hr className="my-10 border-gray-100" {...props} />,
-            table: ({ node, ...props }) => (
-              <div className="overflow-x-auto my-6">
-                <table className="min-w-full border-collapse border border-gray-200 text-sm" {...props} />
-              </div>
-            ),
-            th: ({ node, ...props }) => <th className="bg-gray-50 border border-gray-200 px-4 py-2 font-semibold text-left" {...props} />,
-            td: ({ node, ...props }) => <td className="border border-gray-200 px-4 py-2" {...props} />,
-          }}
-        >
-          {processedContent}
-        </ReactMarkdown>
-      </div>
-
-       <div className="h-24"></div>
     </div>
   );
 };

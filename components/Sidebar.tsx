@@ -109,9 +109,36 @@ const Sidebar: React.FC<SidebarProps> = ({ rootNode, selectedFile, onSelectFile,
     });
   };
 
+  // 监听选中文件变化，自动展开对应文件夹
+  useEffect(() => {
+    if (selectedFile) {
+      const parts = selectedFile.path.split('/');
+      // 移除文件名，只保留文件夹路径部分
+      parts.pop(); 
+      
+      const newExpanded = new Set(expandedPaths);
+      let currentPath = '';
+      let needsUpdate = false;
+      
+      parts.forEach((part, index) => {
+        // 构建逐级路径：Projects -> Projects/Alpha
+        currentPath = index === 0 ? part : `${currentPath}/${part}`;
+        if (!newExpanded.has(currentPath)) {
+          newExpanded.add(currentPath);
+          needsUpdate = true;
+        }
+      });
+      
+      if (needsUpdate) {
+        setExpandedPaths(newExpanded);
+      }
+    }
+  }, [selectedFile]);
+
+  // 初始化或搜索清除时
   useEffect(() => {
       if (rootNode && expandedPaths.size === 0 && !searchTerm) {
-          setExpandedPaths(new Set(['root']));
+          // 这里可以设置默认展开的逻辑，目前保持为空
       }
   }, [rootNode]);
 

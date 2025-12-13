@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FolderOpen, Menu, X, Box } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import MarkdownViewer from './components/MarkdownViewer';
-import AdminConsole from './components/AdminConsole';
+import SettingsPage from './components/SettingsPage';
 import { openDirectory, openMockDirectory, readFileContent } from './services/fileSystem';
 import { FileSystemNode, FileType, AppSettings } from './types';
 import { getMockFileContent } from './services/mockVault';
@@ -15,10 +15,12 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
-  // Settings & Admin State
-  const [showAdmin, setShowAdmin] = useState(false);
+  // View State
+  const [currentView, setCurrentView] = useState<'reader' | 'settings'>('reader');
+  
+  // Settings
   const [settings, setSettings] = useState<AppSettings>({
-    attachmentPath: 'FigureBed 🌄' // 默认值，对应 Mock 数据
+    attachmentPath: 'FigureBed 🌄' 
   });
 
   const handleOpenDirectory = async () => {
@@ -59,6 +61,7 @@ const App: React.FC = () => {
 
   const handleSelectFile = async (node: FileSystemNode) => {
     setSelectedFile(node);
+    setCurrentView('reader'); // 选文件时自动切回阅读器
     try {
       const content = await readFileContent(node);
       setFileContent(content);
@@ -71,7 +74,7 @@ const App: React.FC = () => {
     }
   };
 
-  // 递归查找文件节点 - 支持路径匹配和文件名匹配
+  // 递归查找文件节点
   const findNodeByName = (nodes: FileSystemNode[], targetName: string, isImage: boolean = false): FileSystemNode | null => {
     const normalize = (str: string) => str.toLowerCase().replace(/\\/g, '/');
     const target = normalize(targetName);
@@ -81,28 +84,20 @@ const App: React.FC = () => {
         const nodeName = normalize(node.name);
         const nodePath = normalize(node.path);
         
-        // 1. 尝试全路径匹配 (忽略大小写)
         if (nodePath === target) return node;
         
         if (isImage) {
-           // 图片通常有后缀，尝试匹配文件名
            if (nodeName === target) return node;
-           // 也可以尝试匹配不带路径的 target
         } else {
-           // Markdown 文件匹配
            const cleanNodeName = nodeName.replace(/\.md$/, '');
            const cleanNodePath = nodePath.replace(/\.md$/, '');
-           
-           // 如果 target 包含 /，则认为是路径匹配
            if (target.includes('/')) {
               if (cleanNodePath === target) return node;
            } else {
-              // 否则尝试匹配文件名（Obsidian 最短路径原则）
               if (cleanNodeName === target) return node;
            }
         }
       }
-      
       if (node.kind === FileType.DIRECTORY && node.children) {
         const found = findNodeByName(node.children, targetName, isImage);
         if (found) return found;
@@ -111,7 +106,6 @@ const App: React.FC = () => {
     return null;
   };
 
-  // 处理双链跳转 [[WikiLink]]
   const handleLinkClick = (href: string) => {
     if (!href.startsWith('wikilink:')) return;
     const rawTarget = href.replace('wikilink:', '');
@@ -127,25 +121,18 @@ const App: React.FC = () => {
     }
   };
 
-  // 处理图片资源解析 ![[Image.png]]
   const handleResolveImage = async (imageName: string): Promise<string | null> => {
     if (!rootNode || !rootNode.children) return null;
-    
     const targetName = decodeURIComponent(imageName);
-
-    // 1. 查找节点
     const targetNode = findNodeByName(rootNode.children, targetName, true);
 
     if (!targetNode) return null;
 
-    // 2. 读取文件内容并转换为 URL
     try {
       if (targetNode.handle) {
-        // 本地文件系统模式
         const file = await targetNode.handle.getFile();
         return URL.createObjectURL(file);
       } else {
-        // Mock 模式
         return getMockFileContent(targetNode.path);
       }
     } catch (e) {
@@ -223,7 +210,7 @@ const App: React.FC = () => {
 
       {/* 侧边栏 */}
       <div 
-        className={`fixed md:relative z-30 h-full w-[280px] shrink-0 transition-transform duration-300 ease-in-out transform 
+        className={`fixed md:relative z-30 h-full w-[280px] shrink-0 transition-transform duration-300 ease-in-out transform bg-[#fafafa] border-r border-[#e9e9e9]
           ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
           ${!isSidebarOpen && 'md:hidden'}
         `}
@@ -232,7 +219,7 @@ const App: React.FC = () => {
           rootNode={rootNode} 
           selectedFile={selectedFile} 
           onSelectFile={handleSelectFile}
-          onOpenSettings={() => setShowAdmin(true)}
+          onOpenSettings={() => setCurrentView('settings')}
           hiddenPaths={settings.attachmentPath ? [settings.attachmentPath] : []}
         />
       </div>
@@ -251,23 +238,24 @@ const App: React.FC = () => {
             </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white">
-           <MarkdownViewer 
+        {currentView === 'settings' ? (
+          <SettingsPage 
+            settings={settings}
+            onSave={(newSettings) => {
+              setSettings(newSettings);
+              setCurrentView('reader');
+            }}
+            onBack={() => setCurrentView('reader')}
+          />
+        ) : (
+          <MarkdownViewer 
              content={fileContent} 
              fileName={selectedFile?.name || ''} 
              onLinkClick={handleLinkClick}
              onResolveImage={handleResolveImage}
            />
-        </div>
+        )}
       </div>
-
-      {/* 管理员控制台 */}
-      <AdminConsole 
-        isOpen={showAdmin} 
-        onClose={() => setShowAdmin(false)} 
-        settings={settings}
-        onSave={setSettings}
-      />
     </div>
   );
 };

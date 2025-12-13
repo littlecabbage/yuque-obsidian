@@ -1,6 +1,13 @@
 import { FileType, FileSystemNode } from '../types';
 
-const WELCOME_CONTENT = `# Welcome to Obsidian Reader
+const WELCOME_CONTENT = `---
+tags: [readme, intro]
+author: Obsidian Reader Team
+date: 2023-10-27
+status: published
+---
+
+# Welcome to Obsidian Reader
 
 This is a **mocked vault** demonstrating the reader's capabilities.
 
@@ -17,10 +24,16 @@ We have an attachment folder named \`FigureBed 🌄\`. It is hidden in the sideb
 Below is an image embedded using Wiki Link syntax \`![[demo-image.png]]\`:
 
 ![[demo-image.png]]
-
 `;
 
-const PROJECT_SPECS_CONTENT = `# Project Alpha Specs
+const PROJECT_SPECS_CONTENT = `---
+priority: High
+assignee: Team Alpha
+tags: [specs, planning]
+deadline: 2023-12-31
+---
+
+# Project Alpha Specs
 
 ## Overview
 Project Alpha aims to revolutionize the way we take notes.
@@ -37,9 +50,13 @@ Project Alpha aims to revolutionize the way we take notes.
 | Search | Medium | Pending |
 `;
 
-const MEETING_NOTES_CONTENT = `# Weekly Sync - 2023-10-27
+const MEETING_NOTES_CONTENT = `---
+type: meeting
+date: 2023-10-27
+participants: [Alice, Bob, Charlie]
+---
 
-**Attendees**: Alice, Bob, Charlie
+# Weekly Sync - 2023-10-27
 
 ## Agenda
 - Review sprint progress
@@ -50,32 +67,57 @@ const MEETING_NOTES_CONTENT = `# Weekly Sync - 2023-10-27
 - Alice is working on the mobile responsive layout.
 `;
 
-const MARKDOWN_DEMO_CONTENT = `# Markdown Capabilities
+const MARKDOWN_DEMO_CONTENT = `---
+title: Syntax Highlighting Demo
+tags: [code, demo]
+---
+
+# Markdown Capabilities
 
 Here is a showcase of supported syntax.
 
-### Code
+### TypeScript
 
 \`\`\`typescript
+interface User {
+  id: number;
+  name: string;
+}
+
 const greeting = "Hello, World!";
 console.log(greeting);
+
+function getUser(id: number): User {
+  return { id, name: "Admin" };
+}
+\`\`\`
+
+### Python
+
+\`\`\`python
+def factorial(n):
+    if n == 0:
+        return 1
+    else:
+        return n * factorial(n-1)
+
+print(factorial(5))
+\`\`\`
+
+### JSON
+
+\`\`\`json
+{
+  "name": "Obsidian Reader",
+  "version": "1.0.0",
+  "features": ["Markdown", "WikiLinks"]
+}
 \`\`\`
 
 ### Quotes
 
 > "The best way to predict the future is to invent it."
 > — Alan Kay
-
-### Lists
-
-- Item 1
-- Item 2
-  - Nested Item 2.1
-  - Nested Item 2.2
-
-1. First
-2. Second
-3. Third
 `;
 
 // Mock File Content Map
