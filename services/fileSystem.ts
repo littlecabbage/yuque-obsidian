@@ -1,5 +1,4 @@
 import { FileType, FileSystemNode } from '../types';
-import { getMockRoot, getMockFileContent } from './mockVault';
 
 // 忽略的文件和文件夹列表
 const IGNORED_NAMES = new Set(['.obsidian', '.git', '.trash', '.DS_Store', 'node_modules']);
@@ -21,11 +20,20 @@ export const openDirectory = async (): Promise<FileSystemNode> => {
 
 /**
  * 加载 Mock 仓库 (Mock Mode)
+ * 现在通过获取 vault/manifest.json 来模拟真实的文件系统结构
  */
 export const openMockDirectory = async (): Promise<FileSystemNode> => {
-  // 模拟异步加载延迟
-  await new Promise(resolve => setTimeout(resolve, 600)); 
-  return getMockRoot();
+  try {
+    const response = await fetch('vault/manifest.json');
+    if (!response.ok) {
+      throw new Error(`Failed to load manifest: ${response.status} ${response.statusText}`);
+    }
+    const rootNode = await response.json();
+    return rootNode;
+  } catch (error) {
+    console.error('Failed to load mock directory:', error);
+    throw error;
+  }
 };
 
 /**
@@ -43,8 +51,6 @@ const scanDirectory = async (dirHandle: any, currentPath: string): Promise<FileS
     
     if (entry.kind === 'directory') {
       const childDir = await scanDirectory(entry, path);
-      // 只有非空目录或者我们确实想显示的目录才加进去
-      // 这里简化处理，全部加入
       children.push(childDir);
     } else if (entry.kind === 'file') {
       // 只显示 Markdown 文件
@@ -80,7 +86,7 @@ const scanDirectory = async (dirHandle: any, currentPath: string): Promise<FileS
 /**
  * 读取文件内容
  * 如果有 handle，使用 FileSystem API
- * 如果没有 handle，尝试使用 Mock 数据或 Fetch (未来扩展)
+ * 如果没有 handle，从 vault/ 目录 fetch
  */
 export const readFileContent = async (node: FileSystemNode): Promise<string> => {
   if (node.handle) {
@@ -88,12 +94,18 @@ export const readFileContent = async (node: FileSystemNode): Promise<string> => 
     const file = await node.handle.getFile();
     return await file.text();
   } else {
-    // Mock Mode
-    return getMockFileContent(node.path);
-    
-    // Future Deployment Mode:
-    // 如果部署在同一文件夹，逻辑将类似：
-    // const response = await fetch(node.path);
-    // return await response.text();
+    // Mock Mode: Fetch from static folder
+    // 使用 encodeURI 处理路径中的空格和特殊字符
+    const url = `vault/${node.path}`;
+    try {
+      const response = await fetch(encodeURI(url));
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.text();
+    } catch (error) {
+      console.error('Failed to fetch file:', url, error);
+      throw error;
+    }
   }
 };

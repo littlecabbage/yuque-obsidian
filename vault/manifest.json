@@ -1,0 +1,75 @@
+{
+  "name": "Demo Vault",
+  "kind": "directory",
+  "path": "",
+  "isOpen": true,
+  "children": [
+    {
+      "name": "Welcome.md",
+      "kind": "file",
+      "path": "Welcome.md"
+    },
+    {
+      "name": "Projects",
+      "kind": "directory",
+      "path": "Projects",
+      "children": [
+        {
+          "name": "Alpha",
+          "kind": "directory",
+          "path": "Projects/Alpha",
+          "children": [
+            {
+              "name": "Specs.md",
+              "kind": "file",
+              "path": "Projects/Alpha/Specs.md"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Work",
+      "kind": "directory",
+      "path": "Work",
+      "children": [
+        {
+          "name": "Meetings",
+          "kind": "directory",
+          "path": "Work/Meetings",
+          "children": [
+             {
+               "name": "2023-10-27.md",
+               "kind": "file",
+               "path": "Work/Meetings/2023-10-27.md"
+             }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Tech",
+      "kind": "directory",
+      "path": "Tech",
+      "children": [
+        {
+           "name": "Markdown Demo.md",
+           "kind": "file",
+           "path": "Tech/Markdown Demo.md"
+        }
+      ]
+    },
+    {
+      "name": "FigureBed 🌄",
+      "kind": "directory",
+      "path": "FigureBed 🌄",
+      "children": [
+        {
+          "name": "demo-image.svg",
+          "kind": "file",
+          "path": "FigureBed 🌄/demo-image.svg"
+        }
+      ]
+    }
+  ]
+}

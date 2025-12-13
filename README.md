@@ -1,20 +1,83 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Obsidian Reader (Yuque Style) - 全局样式规范
 
-# Run and deploy your AI Studio app
+本文档概述了 Obsidian Reader 应用程序中使用的设计模式和样式指南。设计目标是在提供功能完整的 Obsidian 仓库阅读器的同时，复刻“语雀 (Yuque)”的简洁、清新美学。
 
-This contains everything you need to run your app locally.
+## 🛠 技术栈
 
-View your app in AI Studio: https://ai.studio/apps/drive/11OYINXCpo94lG2dLsIz5JKm2TkKHSgT1
+- **框架**: React 19 + TypeScript
+- **样式**: Tailwind CSS (通过 CDN 引入)
+- **图标**: Lucide React
+- **Markdown 渲染**: react-markdown + remark-gfm + react-syntax-highlighter
 
-## Run Locally
+## 🎨 配色系统 (Color System)
 
-**Prerequisites:**  Node.js
+### 品牌主色 (Brand)
+- **Primary Green**: `#00b96b`
+  - 用途：选中状态、主按钮、强调文字、Wiki 链接、Loading 状态。
+- **Hover Green**: `#009456`
+  - 用途：主按钮悬停状态。
+- **Selection Background**: `#e6f7ff`
+  - 用途：侧边栏选中项背景（语雀风格蓝色底）。
 
+### 中性色 (Neutrals)
+- **Text Primary**: `#262626`
+  - 用途：正文内容、标题。
+- **Text Secondary**: `#585a5a`
+  - 用途：侧边栏未选中项、次级信息。
+- **Text Tertiary**: `#9ca3af` (Tailwind `gray-400`)
+  - 用途：元数据 (Metadata)、占位符、图标默认色。
+- **Background Main**: `#ffffff`
+  - 用途：文档阅读区域背景。
+- **Background Sidebar**: `#fafafa`
+  - 用途：侧边栏背景。
+- **Borders**: 
+  - `#e9e9e9`: 侧边栏分割线。
+  - `#f0f0f0`: 列表项分割线、顶部栏下边框。
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 🔠 排版 (Typography)
+
+- **字体栈**: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif`
+- **字号**:
+  - 侧边栏: `14px`
+  - 正文: `16px`
+  - H1 标题: `text-4xl` (font-bold)
+- **行高**: `leading-7` (正文松散行高，提升阅读体验)。
+
+## 🧩 组件样式规范
+
+### 侧边栏 (Sidebar)
+- **宽度**: `280px` (Desktop 固定)。
+- **交互**: 
+  - 文件夹点击展开/收起。
+  - 文件点击选中。
+  - 悬停效果: `hover:bg-[#efefef]`。
+  - 选中效果: 文字变绿 (`#00b96b`)，背景变浅蓝 (`#e6f7ff`)，左侧 padding 增加。
+
+### 按钮 (Buttons)
+- **Primary**: `bg-[#00b96b] text-white hover:bg-[#009456] rounded-lg shadow-sm`.
+- **Ghost/Icon**: `text-gray-500 hover:bg-gray-200 rounded-md`.
+- **Outline**: `border border-[#00b96b] text-[#00b96b] bg-white`.
+
+### 滚动条 (Custom Scrollbar)
+自定义 Webkit 滚动条，保持极简风格。
+- **宽度**: `6px`
+- **滑块**: `#dcdcdc` (圆角 `3px`)
+- **轨道**: 透明
+
+## 📄 Markdown 渲染规范
+
+- **表格**: 支持 GFM 语法，圆角边框，隔行变色。
+- **代码块**: 使用 Prism 语法高亮 (Light 主题)，带语言标识头。
+- **引用 (Blockquote)**: 
+  - 左侧边框: `border-l-4 border-[#00b96b]`
+  - 背景: `bg-green-50/30`
+- **Wiki Links**:
+  - `[[Link]]`: 渲染为内部链接，点击跳转，颜色为主色绿。
+  - `![[Image]]`: 自动解析附件路径并渲染图片。
+
+## 📐 布局与响应式
+
+- **断点**: `768px` (md)
+- **Desktop**: 侧边栏常驻，右侧大纲 (`lg:block`) 可见。
+- **Mobile**: 侧边栏默认隐藏 (Drawer 模式)，通过汉堡菜单唤起，遮罩层点击关闭。
+- **阅读容器**: `max-w-[850px]` 居中，确保大屏下的阅读舒适度。

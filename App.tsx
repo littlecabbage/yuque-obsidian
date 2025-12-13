@@ -5,7 +5,6 @@ import MarkdownViewer from './components/MarkdownViewer';
 import SettingsPage from './components/SettingsPage';
 import { openDirectory, openMockDirectory, readFileContent } from './services/fileSystem';
 import { FileSystemNode, FileType, AppSettings } from './types';
-import { getMockFileContent } from './services/mockVault';
 
 const App: React.FC = () => {
   const [rootNode, setRootNode] = useState<FileSystemNode | null>(null);
@@ -53,7 +52,8 @@ const App: React.FC = () => {
         }
       }
     } catch (err) {
-      setErrorMsg('加载演示仓库失败');
+      console.error(err);
+      setErrorMsg('加载演示仓库失败，请检查 vault/manifest.json 是否存在。');
     } finally {
       setIsLoading(false);
     }
@@ -70,7 +70,7 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error('读取文件失败', err);
-      setFileContent('读取文件内容失败。');
+      setFileContent('# Error\n\n读取文件内容失败。');
     }
   };
 
@@ -130,10 +130,16 @@ const App: React.FC = () => {
 
     try {
       if (targetNode.handle) {
+        // 本地文件系统模式
         const file = await targetNode.handle.getFile();
         return URL.createObjectURL(file);
       } else {
-        return getMockFileContent(targetNode.path);
+        // 静态 Mock 模式
+        const url = `vault/${targetNode.path}`;
+        const response = await fetch(encodeURI(url));
+        if (!response.ok) throw new Error('Image fetch failed');
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
       }
     } catch (e) {
       console.error('加载图片失败', e);

@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { prism } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { FileText, ExternalLink, AlertCircle, List, Tag, Calendar, User, AlignLeft, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import remarkGfm from 'remark-gfm';
 
 interface MarkdownViewerProps {
   content: string;
@@ -369,6 +370,7 @@ const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content, fileName, last
                 {/* 正文内容 */}
                 <div className="text-[#262626] leading-relaxed text-[16px]">
                     <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
                     components={{
                         h1: (props) => <HeadingRenderer level={1} {...props} />,
                         h2: (props) => <HeadingRenderer level={2} {...props} />,
