@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { prism } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { FileText, ExternalLink, AlertCircle, List, Tag, Calendar, User, AlignLeft } from 'lucide-react';
+import { FileText, ExternalLink, AlertCircle, List, Tag, Calendar, User, AlignLeft, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 
 interface MarkdownViewerProps {
   content: string;
@@ -35,10 +35,30 @@ const stripMarkdown = (text: string) => {
     .replace(/(\*\*|__)(.*?)\1/g, '$2') // 粗体
     .replace(/(\*|_)(.*?)\1/g, '$2') // 斜体
     .replace(/`([^`]+)`/g, '$1') // 行内代码
+    .replace(/<!--[\s\S]*?-->/g, '') // 移除 HTML 注释
     .trim();
 };
 
-// 简单的 YAML 解析器
+// 辅助函数：解析 YAML 值
+const parseYamlValue = (val: string) => {
+  val = val.trim();
+  if (val === 'true') return true;
+  if (val === 'false') return false;
+  if (val === 'null') return null;
+  // 去除引号
+  if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+     return val.slice(1, -1);
+  }
+  // 数组 [a, b]
+  if (val.startsWith('[') && val.endsWith(']')) {
+      const content = val.slice(1, -1).trim();
+      if (!content) return [];
+      return content.split(',').map(v => parseYamlValue(v));
+  }
+  return val;
+};
+
+// 增强版 YAML 解析器 (支持简单的嵌套)
 const parseFrontmatter = (text: string) => {
   const pattern = /^---\n([\s\S]*?)\n---/;
   const match = text.match(pattern);
@@ -47,31 +67,84 @@ const parseFrontmatter = (text: string) => {
     return { metadata: null, content: text };
   }
 
-  const yamlBlock = match[1];
-  const content = text.replace(pattern, '').trim(); // 移除 header 后的内容
+  const yamlLines = match[1].split('\n');
   const metadata: Record<string, any> = {};
+  
+  let currentObj: any = null;
+  let currentKey: string = '';
 
-  yamlBlock.split('\n').forEach(line => {
-    const parts = line.split(':');
-    if (parts.length >= 2) {
-      const key = parts[0].trim();
-      let value = parts.slice(1).join(':').trim();
-      
-      // 处理数组 [a, b]
-      if (value.startsWith('[') && value.endsWith(']')) {
-        value = value.slice(1, -1).split(',').map((v: string) => v.trim()) as any;
+  for (const line of yamlLines) {
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+
+    const indentLevel = line.search(/\S|$/); // 获取缩进级别
+    const trimmed = line.trim();
+    const separatorIndex = trimmed.indexOf(':');
+    
+    if (separatorIndex === -1) continue;
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const valueStr = trimmed.slice(separatorIndex + 1).trim();
+
+    if (indentLevel === 0) {
+      // 顶层键
+      if (valueStr === '') {
+        // 开始一个新对象 (例如 halo:)
+        currentKey = key;
+        currentObj = {};
+        metadata[key] = currentObj;
+      } else {
+        // 普通值
+        currentKey = '';
+        currentObj = null;
+        metadata[key] = parseYamlValue(valueStr);
       }
-      metadata[key] = value;
+    } else if (indentLevel > 0 && currentObj) {
+      // 嵌套属性 (简单的二级嵌套)
+      currentObj[key] = parseYamlValue(valueStr);
     }
-  });
+  }
 
+  const content = text.replace(pattern, '').trim();
   return { metadata, content };
+};
+
+const MetadataRenderer = ({ data, level = 0 }: { data: any, level?: number }) => {
+  if (typeof data !== 'object' || data === null) {
+    return <span>{String(data)}</span>;
+  }
+  
+  if (Array.isArray(data)) {
+    if (data.length === 0) return <span className="text-gray-400 italic">空</span>;
+    return (
+      <div className="flex gap-1 flex-wrap">
+        {data.map((item, idx) => (
+          <span key={idx} className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-xs">
+            {String(item)}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex flex-col gap-1 ${level > 0 ? 'mt-1' : ''}`}>
+      {Object.entries(data).map(([key, value]) => (
+        <div key={key} className="flex items-start text-sm">
+           <span className="text-gray-500 mr-2 min-w-[80px] shrink-0 font-medium select-none">{key}:</span>
+           <div className="flex-1 break-all text-gray-700">
+             <MetadataRenderer data={value} level={level + 1} />
+           </div>
+        </div>
+      ))}
+    </div>
+  );
 };
 
 const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content, fileName, lastModified, onLinkClick, onResolveImage }) => {
   const displayTitle = fileName.replace(/\.md$/i, '');
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [activeId, setActiveId] = useState<string>('');
+  const [isMetaExpanded, setIsMetaExpanded] = useState(false);
 
   // 解析 Frontmatter 和 Wiki Links
   const { metadata, processedContent } = useMemo(() => {
@@ -80,8 +153,12 @@ const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content, fileName, last
     // 1. 分离元数据
     const { metadata, content: rawBody } = parseFrontmatter(content);
 
-    // 2. 处理双链
-    const processed = rawBody.replace(/(!?)\[\[(.*?)(?:\|(.*?))?\]\]/g, (match, isEmbed, link, alias) => {
+    // 2. 移除 HTML 注释 (<!-- ... -->)
+    // 必须在处理 Markdown 之前移除，否则可能被部分渲染
+    let cleanedContent = rawBody.replace(/<!--[\s\S]*?-->/g, '');
+
+    // 3. 处理双链
+    const processed = cleanedContent.replace(/(!?)\[\[(.*?)(?:\|(.*?))?\]\]/g, (match, isEmbed, link, alias) => {
       const target = link.trim();
       const text = alias ? alias.trim() : target;
       if (isEmbed) {
@@ -101,8 +178,6 @@ const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content, fileName, last
       return;
     }
 
-    // 简单的正则匹配标题，但这需要处理代码块中的 # 符号，目前使用简单假设
-    // 如果需要更精确，应该使用 remark 插件链
     const headingRegex = /^(#{1,4})\s+(.+)$/gm;
     const items: OutlineItem[] = [];
     let match;
@@ -208,6 +283,9 @@ const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content, fileName, last
     );
   }
 
+  // 检查是否有任何核心元数据需要显示
+  const hasBasicMeta = metadata && (metadata.date || metadata.updated || metadata.author || (metadata.tags && metadata.tags.length > 0));
+
   return (
     <div className="flex h-full animate-fade-in relative">
         {/* 文档阅读主体区域 */}
@@ -216,52 +294,75 @@ const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content, fileName, last
                 
                 {/* 标题区 */}
                 <div className="mb-6 border-b border-gray-100 pb-6">
-                    <h1 className="text-4xl font-bold text-[#262626] mb-4 leading-tight">{displayTitle}</h1>
+                    <h1 className="text-4xl font-bold text-[#262626] mb-4 leading-tight">{metadata?.title || displayTitle}</h1>
                     
-                    {/* 元信息展示 (Metadata) */}
-                    {metadata && (
-                        <div className="flex flex-wrap gap-y-2 gap-x-4 text-sm text-gray-500 bg-gray-50 p-3 rounded-lg border border-gray-100 mb-4">
-                            {metadata.date && (
-                                <div className="flex items-center">
-                                    <Calendar size={14} className="mr-1.5 opacity-70"/>
-                                    <span>{metadata.date}</span>
-                                </div>
-                            )}
-                            {metadata.author && (
-                                <div className="flex items-center">
-                                    <User size={14} className="mr-1.5 opacity-70"/>
-                                    <span>{metadata.author}</span>
-                                </div>
-                            )}
-                            {metadata.tags && (
-                                <div className="flex items-center">
-                                    <Tag size={14} className="mr-1.5 opacity-70"/>
-                                    <div className="flex gap-1">
-                                        {(Array.isArray(metadata.tags) ? metadata.tags : [metadata.tags]).map((tag: string) => (
-                                            <span key={tag} className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded text-xs">
-                                                #{tag}
-                                            </span>
-                                        ))}
+                    {/* 元信息展示区域 */}
+                    {(metadata || lastModified) && (
+                        <div className="bg-gray-50 rounded-lg border border-gray-100 overflow-hidden transition-all duration-300">
+                            {/* 默认折叠视图：只显示核心信息 */}
+                            <div className="flex flex-wrap items-center gap-y-2 gap-x-6 px-4 py-3 text-sm text-gray-500">
+                                {/* 创建时间 */}
+                                {metadata?.date && (
+                                    <div className="flex items-center" title="创建时间">
+                                        <Calendar size={14} className="mr-1.5 opacity-70"/>
+                                        <span>{metadata.date}</span>
                                     </div>
-                                </div>
-                            )}
-                            {/* 显示其他未专门处理的字段 */}
-                            {Object.entries(metadata).map(([key, value]) => {
-                                if (['date', 'author', 'tags'].includes(key)) return null;
-                                return (
-                                    <div key={key} className="flex items-center">
-                                        <span className="font-medium mr-1 opacity-70">{key}:</span>
-                                        <span>{String(value)}</span>
+                                )}
+                                {/* 更新时间 */}
+                                {metadata?.updated && (
+                                    <div className="flex items-center" title="更新时间">
+                                        <Clock size={14} className="mr-1.5 opacity-70"/>
+                                        <span>{metadata.updated}</span>
                                     </div>
-                                )
-                            })}
-                        </div>
-                    )}
+                                )}
+                                {/* 作者 */}
+                                {metadata?.author && (
+                                    <div className="flex items-center" title="作者">
+                                        <User size={14} className="mr-1.5 opacity-70"/>
+                                        <span>{metadata.author}</span>
+                                    </div>
+                                )}
+                                {/* 标签 */}
+                                {metadata?.tags && metadata.tags.length > 0 && (
+                                    <div className="flex items-center">
+                                        <Tag size={14} className="mr-1.5 opacity-70"/>
+                                        <div className="flex gap-1 flex-wrap">
+                                            {(Array.isArray(metadata.tags) ? metadata.tags : [metadata.tags]).map((tag: string, idx: number) => (
+                                                <span key={idx} className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded text-xs hover:bg-blue-100 transition-colors cursor-default">
+                                                    #{tag}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
 
-                    {!metadata && lastModified && (
-                         <div className="text-xs text-gray-400">
-                            最后编辑于 {new Date(lastModified).toLocaleDateString()}
-                         </div>
+                                {/* Fallback: 如果没有 Metadata，显示文件修改时间 */}
+                                {!hasBasicMeta && lastModified && !metadata?.date && (
+                                     <div className="flex items-center text-xs text-gray-400">
+                                        <Clock size={14} className="mr-1.5 opacity-70"/>
+                                        编辑于 {new Date(lastModified).toLocaleDateString()}
+                                     </div>
+                                )}
+
+                                {/* 展开/收起按钮 - 仅当有 Metadata 时显示 */}
+                                {metadata && (
+                                  <button 
+                                    onClick={() => setIsMetaExpanded(!isMetaExpanded)}
+                                    className="ml-auto p-1 hover:bg-gray-200 rounded-full text-gray-400 transition-colors"
+                                    title={isMetaExpanded ? "收起详细信息" : "展开详细信息"}
+                                  >
+                                    {isMetaExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                  </button>
+                                )}
+                            </div>
+
+                            {/* 展开视图：显示所有详细信息 */}
+                            {metadata && isMetaExpanded && (
+                                <div className="px-4 pb-4 pt-1 border-t border-gray-100 bg-gray-50/50 animate-fade-in">
+                                    <MetadataRenderer data={metadata} />
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
 
@@ -283,7 +384,7 @@ const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content, fileName, last
                             const match = /language-(\w+)/.exec(className || '');
                             const isInline = !match && !String(children).includes('\n');
                             
-                            // 排除 ref 属性，因为 SyntaxHighlighter 不支持 react-markdown 传递的 HTMLElement ref
+                            // 排除 ref 属性
                             const { ref, ...rest } = props as any;
 
                             return isInline ? (
