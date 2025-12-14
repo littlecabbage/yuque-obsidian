@@ -10,9 +10,10 @@ import {
   writeFileContent, 
   createNewFile, 
   createNewFolder, 
-  deleteFileSystemNode 
+  deleteFileSystemNode,
+  renameFileSystemNode
 } from './services/fileSystem';
-import { addOrUpdateVault } from './services/vaultRegistry';
+import { addOrUpdateVault, saveVaultManifest, getVaultManifest } from './services/vaultRegistry';
 import { FileSystemNode, FileType, AppSettings, VaultRecord } from './types';
 
 const App: React.FC = () => {
@@ -32,6 +33,11 @@ const App: React.FC = () => {
     attachmentPath: 'Attachments' 
   });
 
+  // Helper to sync manifest to local storage whenever rootNode changes
+  const syncManifest = (id: string, root: FileSystemNode) => {
+    saveVaultManifest(id, root);
+  };
+
   const handleOpenDirectory = async () => {
     setIsLoading(true);
     setErrorMsg(null);
@@ -49,6 +55,9 @@ const App: React.FC = () => {
         type: 'local',
         lastAccessed: Date.now()
       });
+      
+      // Automatically create/update manifest
+      syncManifest(id, root);
 
     } catch (err: any) {
       if (err.name !== 'AbortError') {
@@ -63,13 +72,24 @@ const App: React.FC = () => {
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const root = await openMockDirectory();
+      const id = 'mock-demo';
+      
+      // 1. Try to load from local storage first (Persist structure across reloads)
+      const cachedManifest = getVaultManifest(id);
+      
+      let root: FileSystemNode;
+      if (cachedManifest) {
+          console.log('Loaded mock vault from local persistence');
+          root = cachedManifest;
+      } else {
+          console.log('Loaded mock vault from static source');
+          root = await openMockDirectory();
+      }
+
       setRootNode(root);
       setIsSidebarOpen(true);
-      
-      // Add to history
-      const id = 'mock-demo';
       setCurrentVaultId(id);
+      
       addOrUpdateVault({
         id,
         name: root.name,
@@ -77,7 +97,10 @@ const App: React.FC = () => {
         lastAccessed: Date.now()
       });
 
-      if (root.children && root.children.length > 0) {
+      // Update manifest (or re-save it)
+      syncManifest(id, root);
+
+      if (!cachedManifest && root.children && root.children.length > 0) {
         const welcomeFile = root.children.find(c => c.name === 'Welcome.md');
         if (welcomeFile) {
            handleSelectFile(welcomeFile);
@@ -111,6 +134,13 @@ const App: React.FC = () => {
     try {
       await writeFileContent(selectedFile, newContent);
       setFileContent(newContent);
+      
+      // Sync structure if needed (Mock mode might update internal content ref)
+      if (!selectedFile.handle && currentVaultId && rootNode) {
+         // Although content is in LS, we might want to trigger a sync just in case
+         syncManifest(currentVaultId, rootNode);
+      }
+
     } catch (err) {
       console.error('保存失败', err);
       alert('保存文件失败');
@@ -119,8 +149,11 @@ const App: React.FC = () => {
 
   const refreshRoot = () => {
       // Force React to re-render tree by creating a new reference
-      if (rootNode) {
-          setRootNode({ ...rootNode });
+      // And sync manifest
+      if (rootNode && currentVaultId) {
+          const newRoot = { ...rootNode };
+          setRootNode(newRoot);
+          syncManifest(currentVaultId, newRoot);
       }
   };
 
@@ -156,6 +189,21 @@ const App: React.FC = () => {
     } catch (e: any) {
       console.error(e);
       alert('删除失败: ' + e.message);
+    }
+  };
+  
+  const handleRenameNode = async (parent: FileSystemNode, node: FileSystemNode, newName: string) => {
+    try {
+       await renameFileSystemNode(parent, node, newName);
+       if (selectedFile?.path === node.path) {
+           // Update selected file reference if we renamed the active file
+           // Note: Path inside selectedFile must be updated, which is done by renameFileSystemNode modifying the object reference
+           setSelectedFile({...node}); 
+       }
+       refreshRoot();
+    } catch (e: any) {
+       console.error(e);
+       throw e; // Let sidebar handle alert
     }
   };
 
@@ -225,6 +273,11 @@ const App: React.FC = () => {
         const file = await targetNode.handle.getFile();
         return URL.createObjectURL(file);
       } else {
+        // Mock Mode Image
+        if (targetNode.content) {
+            // If we supported image uploads in mock mode, it would be base64 here
+        }
+        
         const cleanPath = targetNode.path.startsWith('/') ? targetNode.path.slice(1) : targetNode.path;
         const url = `vault/${encodeURI(cleanPath)}`;
         const response = await fetch(url);
@@ -324,6 +377,7 @@ const App: React.FC = () => {
           onCreateFile={handleCreateFile}
           onCreateFolder={handleCreateFolder}
           onDeleteNode={handleDeleteNode}
+          onRenameNode={handleRenameNode}
         />
       </div>
 

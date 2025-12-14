@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, Shield, HardDrive, Layout, Trash2, Archive } from 'lucide-react';
+import { ArrowLeft, Save, Shield, HardDrive, Layout, Trash2, Archive, FileJson } from 'lucide-react';
 import { AppSettings, VaultRecord } from '../types';
-import { getVaultHistory, removeVaultFromHistory } from '../services/vaultRegistry';
+import { getVaultHistory, removeVaultFromHistory, getVaultManifest } from '../services/vaultRegistry';
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -24,7 +24,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, onSave, onBack, c
   };
 
   const handleDeleteVault = (id: string) => {
-    if (confirm('确定要从历史记录中删除此仓库记录吗？(不会删除本地文件)')) {
+    if (confirm('确定要从历史记录中删除此仓库记录吗？\n\n这将同时删除平台托管的 Manifest 配置文件，但不会删除您硬盘上的实际文件。')) {
       const updated = removeVaultFromHistory(id);
       setVaults(updated);
     }
@@ -106,38 +106,53 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, onSave, onBack, c
                        <div className="p-8 text-center text-gray-400">暂无历史记录</div>
                      ) : (
                        <ul className="divide-y divide-gray-100">
-                         {vaults.map((vault) => (
-                           <li key={vault.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                         {vaults.map((vault) => {
+                           const hasManifest = !!getVaultManifest(vault.id);
+                           const isCurrent = vault.id === currentVaultId;
+                           
+                           return (
+                           <li key={vault.id} className={`p-4 flex items-center justify-between transition-colors ${isCurrent ? 'bg-green-50/30' : 'hover:bg-gray-50'}`}>
                              <div>
                                <div className="flex items-center gap-2">
                                  <h3 className="font-medium text-gray-800">{vault.name}</h3>
                                  <span className={`text-[10px] px-1.5 py-0.5 rounded border ${vault.type === 'mock' ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
                                    {vault.type.toUpperCase()}
                                  </span>
-                                 {vault.id === currentVaultId && (
-                                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-100">当前</span>
+                                 {isCurrent && (
+                                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-100">当前使用</span>
                                  )}
                                </div>
-                               <p className="text-xs text-gray-400 mt-1">
-                                 上次访问: {new Date(vault.lastAccessed).toLocaleString()}
-                               </p>
+                               <div className="flex items-center mt-1.5 gap-3">
+                                   <p className="text-xs text-gray-400">
+                                     上次访问: {new Date(vault.lastAccessed).toLocaleString()}
+                                   </p>
+                                   {hasManifest && (
+                                       <span className="flex items-center text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded" title="平台已托管此仓库的 Manifest 结构文件">
+                                           <FileJson size={10} className="mr-1"/> Manifest Cached
+                                       </span>
+                                   )}
+                               </div>
                              </div>
-                             {vault.id !== currentVaultId && (
-                               <button 
-                                 onClick={() => handleDeleteVault(vault.id)}
-                                 className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                                 title="删除记录"
-                               >
-                                 <Trash2 size={16} />
-                               </button>
-                             )}
+                             
+                             <button 
+                               onClick={() => handleDeleteVault(vault.id)}
+                               disabled={isCurrent}
+                               className={`p-2 rounded-full transition-colors flex items-center gap-1
+                                 ${isCurrent 
+                                   ? 'text-gray-300 cursor-not-allowed' 
+                                   : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
+                                 }`}
+                               title={isCurrent ? "无法删除当前正在使用的仓库" : "删除记录与 Manifest"}
+                             >
+                               <Trash2 size={16} />
+                             </button>
                            </li>
-                         ))}
+                         );})}
                        </ul>
                      )}
                   </div>
                   <p className="text-xs text-gray-500 mt-3 px-1">
-                    注：删除记录只会移除 Obsidian Reader 中的访问历史，不会删除您本地硬盘上的实际文件。
+                    注：Manifest (清单文件) 由平台自动生成并托管，记录了仓库的文件结构。删除仓库记录会自动清理对应的 Manifest 数据。
                   </p>
                </div>
              </div>

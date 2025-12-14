@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, File, Folder, Search, Book, Settings, Plus, FilePlus, FolderPlus, Trash2, MoreVertical } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, Folder, Search, Book, Settings, Plus, FilePlus, FolderPlus, Trash2, MoreVertical, Edit3 } from 'lucide-react';
 import { FileSystemNode, FileType } from '../types';
 
 interface SidebarProps {
@@ -11,6 +11,7 @@ interface SidebarProps {
   onCreateFile: (parent: FileSystemNode, name: string) => Promise<void>;
   onCreateFolder: (parent: FileSystemNode, name: string) => Promise<void>;
   onDeleteNode: (parent: FileSystemNode, node: FileSystemNode) => Promise<void>;
+  onRenameNode: (parent: FileSystemNode, node: FileSystemNode, newName: string) => Promise<void>;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -21,7 +22,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   hiddenPaths,
   onCreateFile,
   onCreateFolder,
-  onDeleteNode
+  onDeleteNode,
+  onRenameNode
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
@@ -70,6 +72,19 @@ const Sidebar: React.FC<SidebarProps> = ({
           } catch(err: any) {
              alert(err.message || '删除失败');
           }
+      }
+  };
+
+  const handleRename = async (e: React.MouseEvent, parent: FileSystemNode, node: FileSystemNode) => {
+      e.stopPropagation();
+      setActiveMenuPath(null);
+      const newName = prompt('请输入新的名称:', node.name);
+      if (!newName || newName === node.name) return;
+      
+      try {
+          await onRenameNode(parent, node, newName);
+      } catch (err: any) {
+          alert(err.message || '重命名失败');
       }
   };
 
@@ -131,12 +146,20 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </>
             )}
             {parent && (
-                <button 
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50 text-red-500 flex items-center"
-                    onClick={(e) => handleDelete(e, parent, node)}
-                >
-                    <Trash2 size={12} className="mr-2"/> 删除
-                </button>
+                <>
+                    <button 
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center"
+                        onClick={(e) => handleRename(e, parent, node)}
+                    >
+                        <Edit3 size={12} className="mr-2 text-gray-500"/> 重命名
+                    </button>
+                    <button 
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 text-red-500 flex items-center"
+                        onClick={(e) => handleDelete(e, parent, node)}
+                    >
+                        <Trash2 size={12} className="mr-2"/> 删除
+                    </button>
+                </>
             )}
         </div>
     );
@@ -208,7 +231,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     return () => window.removeEventListener('click', closeMenu);
   }, []);
 
-  // Update logic same as before...
   useEffect(() => {
     if (selectedFile) {
       const parts = selectedFile.path.split('/');
