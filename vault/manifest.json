@@ -53,21 +53,21 @@
       "path": "Tech",
       "children": [
         {
-           "name": "Markdown Demo.md",
+           "name": "Markdown-Demo.md",
            "kind": "file",
-           "path": "Tech/Markdown Demo.md"
+           "path": "Tech/Markdown-Demo.md"
         }
       ]
     },
     {
-      "name": "FigureBed 🌄",
+      "name": "Attachments",
       "kind": "directory",
-      "path": "FigureBed 🌄",
+      "path": "Attachments",
       "children": [
         {
           "name": "demo-image.svg",
           "kind": "file",
-          "path": "FigureBed 🌄/demo-image.svg"
+          "path": "Attachments/demo-image.svg"
         }
       ]
     }

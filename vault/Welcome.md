@@ -17,8 +17,8 @@ This is a **mocked vault** demonstrating the reader's capabilities.
 
 ## Image Attachment Demo
 
-We have an attachment folder named `FigureBed 🌄`. It is hidden in the sidebar if configured in Admin Console.
+We have an attachment folder named `Attachments`. It is hidden in the sidebar if configured in Admin Console.
 
-Below is an image embedded using Wiki Link syntax `![[demo-image.svg]]`:
+Below is an image embedded using Wiki Link syntax `! [ [ demo-image.svg ] ]`:
 
 ![[demo-image.svg]]

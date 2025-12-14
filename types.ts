@@ -10,6 +10,7 @@ export interface FileSystemNode {
   handle?: any; // 浏览器原生句柄 (可选，Mock模式或静态托管下为空)
   children?: FileSystemNode[];
   isOpen?: boolean; // 文件夹是否展开（UI状态）
+  content?: string; // 缓存内容 (用于 Mock 模式的编辑)
 }
 
 export interface Breadcrumb {
@@ -19,4 +20,12 @@ export interface Breadcrumb {
 
 export interface AppSettings {
   attachmentPath: string;
+}
+
+export interface VaultRecord {
+  id: string;
+  name: string;
+  lastAccessed: number;
+  type: 'local' | 'mock';
+  handle?: any; // Local mode handle (not persistable in localStorage directly, but tracked in session)
 }

@@ -1,20 +1,33 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Save, Shield, HardDrive, Layout, Code } from 'lucide-react';
-import { AppSettings } from '../types';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Save, Shield, HardDrive, Layout, Trash2, Archive } from 'lucide-react';
+import { AppSettings, VaultRecord } from '../types';
+import { getVaultHistory, removeVaultFromHistory } from '../services/vaultRegistry';
 
 interface SettingsPageProps {
   settings: AppSettings;
   onSave: (newSettings: AppSettings) => void;
   onBack: () => void;
+  currentVaultId?: string;
 }
 
-const SettingsPage: React.FC<SettingsPageProps> = ({ settings, onSave, onBack }) => {
+const SettingsPage: React.FC<SettingsPageProps> = ({ settings, onSave, onBack, currentVaultId }) => {
   const [formData, setFormData] = useState<AppSettings>(settings);
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'advanced'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'vaults'>('general');
+  const [vaults, setVaults] = useState<VaultRecord[]>([]);
+
+  useEffect(() => {
+    setVaults(getVaultHistory());
+  }, []);
 
   const handleSave = () => {
     onSave(formData);
-    // 这里可以添加保存成功的提示
+  };
+
+  const handleDeleteVault = (id: string) => {
+    if (confirm('确定要从历史记录中删除此仓库记录吗？(不会删除本地文件)')) {
+      const updated = removeVaultFromHistory(id);
+      setVaults(updated);
+    }
   };
 
   const SidebarItem = ({ id, icon: Icon, label }: { id: string, icon: any, label: string }) => (
@@ -47,8 +60,8 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, onSave, onBack })
         <div className="w-64 border-r border-gray-100 p-4 bg-gray-50/50 hidden md:block">
           <div className="mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider px-4">系统管理</div>
           <SidebarItem id="general" icon={HardDrive} label="基础设置" />
+          <SidebarItem id="vaults" icon={Archive} label="仓库管理" />
           <SidebarItem id="appearance" icon={Layout} label="界面与显示" />
-          <SidebarItem id="advanced" icon={Shield} label="权限与安全" />
         </div>
 
         {/* 右侧内容区 */}
@@ -81,6 +94,55 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, onSave, onBack })
             </div>
           )}
 
+          {activeTab === 'vaults' && (
+             <div className="space-y-8">
+               <div>
+                  <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                    <Archive size={24} className="mr-2 text-[#00b96b]" />
+                    仓库管理
+                  </h2>
+                  <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                     {vaults.length === 0 ? (
+                       <div className="p-8 text-center text-gray-400">暂无历史记录</div>
+                     ) : (
+                       <ul className="divide-y divide-gray-100">
+                         {vaults.map((vault) => (
+                           <li key={vault.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                             <div>
+                               <div className="flex items-center gap-2">
+                                 <h3 className="font-medium text-gray-800">{vault.name}</h3>
+                                 <span className={`text-[10px] px-1.5 py-0.5 rounded border ${vault.type === 'mock' ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                   {vault.type.toUpperCase()}
+                                 </span>
+                                 {vault.id === currentVaultId && (
+                                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-100">当前</span>
+                                 )}
+                               </div>
+                               <p className="text-xs text-gray-400 mt-1">
+                                 上次访问: {new Date(vault.lastAccessed).toLocaleString()}
+                               </p>
+                             </div>
+                             {vault.id !== currentVaultId && (
+                               <button 
+                                 onClick={() => handleDeleteVault(vault.id)}
+                                 className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                                 title="删除记录"
+                               >
+                                 <Trash2 size={16} />
+                               </button>
+                             )}
+                           </li>
+                         ))}
+                       </ul>
+                     )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-3 px-1">
+                    注：删除记录只会移除 Obsidian Reader 中的访问历史，不会删除您本地硬盘上的实际文件。
+                  </p>
+               </div>
+             </div>
+          )}
+
           {activeTab === 'appearance' && (
              <div className="space-y-8">
                <div>
@@ -90,33 +152,6 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ settings, onSave, onBack })
                   </h2>
                   <div className="bg-white p-6 border border-gray-200 rounded-xl shadow-sm text-center py-12">
                      <p className="text-gray-400">更多主题与外观设置开发中...</p>
-                  </div>
-               </div>
-             </div>
-          )}
-
-          {activeTab === 'advanced' && (
-             <div className="space-y-8">
-               <div>
-                  <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
-                    <Shield size={24} className="mr-2 text-[#00b96b]" />
-                    权限控制
-                  </h2>
-                  <div className="bg-yellow-50 p-6 border border-yellow-100 rounded-xl shadow-sm">
-                     <h3 className="text-yellow-800 font-medium mb-2">管理员权限</h3>
-                     <p className="text-sm text-yellow-700 mb-4">
-                       当前处于单机模式，默认拥有所有权限。接入后端服务后，此处将管理用户角色与 Vault 访问权限。
-                     </p>
-                     <div className="opacity-50 pointer-events-none">
-                       <label className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
-                         <input type="checkbox" checked readOnly className="rounded text-[#00b96b]" />
-                         <span>允许编辑文件</span>
-                       </label>
-                       <label className="flex items-center space-x-2 text-sm text-gray-600">
-                         <input type="checkbox" checked readOnly className="rounded text-[#00b96b]" />
-                         <span>允许删除文件</span>
-                       </label>
-                     </div>
                   </div>
                </div>
              </div>

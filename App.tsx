@@ -3,8 +3,17 @@ import { FolderOpen, Menu, X, Box } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import MarkdownViewer from './components/MarkdownViewer';
 import SettingsPage from './components/SettingsPage';
-import { openDirectory, openMockDirectory, readFileContent } from './services/fileSystem';
-import { FileSystemNode, FileType, AppSettings } from './types';
+import { 
+  openDirectory, 
+  openMockDirectory, 
+  readFileContent, 
+  writeFileContent, 
+  createNewFile, 
+  createNewFolder, 
+  deleteFileSystemNode 
+} from './services/fileSystem';
+import { addOrUpdateVault } from './services/vaultRegistry';
+import { FileSystemNode, FileType, AppSettings, VaultRecord } from './types';
 
 const App: React.FC = () => {
   const [rootNode, setRootNode] = useState<FileSystemNode | null>(null);
@@ -13,13 +22,14 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [currentVaultId, setCurrentVaultId] = useState<string | null>(null);
   
   // View State
   const [currentView, setCurrentView] = useState<'reader' | 'settings'>('reader');
   
   // Settings
   const [settings, setSettings] = useState<AppSettings>({
-    attachmentPath: 'FigureBed 🌄' 
+    attachmentPath: 'Attachments' 
   });
 
   const handleOpenDirectory = async () => {
@@ -29,6 +39,17 @@ const App: React.FC = () => {
       const root = await openDirectory();
       setRootNode(root);
       setIsSidebarOpen(true);
+      
+      // Add to history
+      const id = `local-${root.name}`;
+      setCurrentVaultId(id);
+      addOrUpdateVault({
+        id,
+        name: root.name,
+        type: 'local',
+        lastAccessed: Date.now()
+      });
+
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         setErrorMsg('无法打开文件夹，请确保浏览器支持 File System Access API (推荐使用 Chrome/Edge 且在 HTTPS 或 localhost 环境下运行)。');
@@ -45,6 +66,17 @@ const App: React.FC = () => {
       const root = await openMockDirectory();
       setRootNode(root);
       setIsSidebarOpen(true);
+      
+      // Add to history
+      const id = 'mock-demo';
+      setCurrentVaultId(id);
+      addOrUpdateVault({
+        id,
+        name: root.name,
+        type: 'mock',
+        lastAccessed: Date.now()
+      });
+
       if (root.children && root.children.length > 0) {
         const welcomeFile = root.children.find(c => c.name === 'Welcome.md');
         if (welcomeFile) {
@@ -61,16 +93,69 @@ const App: React.FC = () => {
 
   const handleSelectFile = async (node: FileSystemNode) => {
     setSelectedFile(node);
-    setCurrentView('reader'); // 选文件时自动切回阅读器
+    setCurrentView('reader'); 
     try {
       const content = await readFileContent(node);
       setFileContent(content);
       if (window.innerWidth < 768) {
         setIsSidebarOpen(false);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('读取文件失败', err);
-      setFileContent('# Error\n\n读取文件内容失败。');
+      setFileContent(`# Error\n\n读取文件内容失败。\n\n> **Technical Details:**\n> ${err.message || err}`);
+    }
+  };
+
+  const handleSaveFile = async (newContent: string) => {
+    if (!selectedFile) return;
+    try {
+      await writeFileContent(selectedFile, newContent);
+      setFileContent(newContent);
+    } catch (err) {
+      console.error('保存失败', err);
+      alert('保存文件失败');
+    }
+  };
+
+  const refreshRoot = () => {
+      // Force React to re-render tree by creating a new reference
+      if (rootNode) {
+          setRootNode({ ...rootNode });
+      }
+  };
+
+  const handleCreateFile = async (parent: FileSystemNode, name: string) => {
+    try {
+      const newNode = await createNewFile(parent, name);
+      refreshRoot();
+      handleSelectFile(newNode);
+    } catch (e: any) {
+      console.error(e);
+      alert('创建文件失败: ' + e.message);
+    }
+  };
+
+  const handleCreateFolder = async (parent: FileSystemNode, name: string) => {
+    try {
+      await createNewFolder(parent, name);
+      refreshRoot();
+    } catch (e: any) {
+      console.error(e);
+      alert('创建文件夹失败: ' + e.message);
+    }
+  };
+
+  const handleDeleteNode = async (parent: FileSystemNode, node: FileSystemNode) => {
+    try {
+       await deleteFileSystemNode(parent, node);
+       if (selectedFile?.path === node.path) {
+           setSelectedFile(null);
+           setFileContent('');
+       }
+       refreshRoot();
+    } catch (e: any) {
+      console.error(e);
+      alert('删除失败: ' + e.message);
     }
   };
 
@@ -84,20 +169,24 @@ const App: React.FC = () => {
         const nodeName = normalize(node.name);
         const nodePath = normalize(node.path);
         
+        // 1. 尝试完全匹配路径
         if (nodePath === target) return node;
         
-        if (isImage) {
+        // 2. 如果是图片或双链引用，尝试匹配文件名
+        if (isImage || !target.includes('/')) {
            if (nodeName === target) return node;
+        }
+        
+        // 3. 尝试移除扩展名匹配 (for WikiLinks like [[Specs]])
+        const cleanNodeName = nodeName.replace(/\.md$/, '');
+        const cleanNodePath = nodePath.replace(/\.md$/, '');
+        if (target.includes('/')) {
+           if (cleanNodePath === target) return node;
         } else {
-           const cleanNodeName = nodeName.replace(/\.md$/, '');
-           const cleanNodePath = nodePath.replace(/\.md$/, '');
-           if (target.includes('/')) {
-              if (cleanNodePath === target) return node;
-           } else {
-              if (cleanNodeName === target) return node;
-           }
+           if (cleanNodeName === target) return node;
         }
       }
+      
       if (node.kind === FileType.DIRECTORY && node.children) {
         const found = findNodeByName(node.children, targetName, isImage);
         if (found) return found;
@@ -126,19 +215,24 @@ const App: React.FC = () => {
     const targetName = decodeURIComponent(imageName);
     const targetNode = findNodeByName(rootNode.children, targetName, true);
 
-    if (!targetNode) return null;
+    if (!targetNode) {
+        console.warn(`Image node not found: ${targetName}`);
+        return null;
+    }
 
     try {
       if (targetNode.handle) {
-        // 本地文件系统模式
         const file = await targetNode.handle.getFile();
         return URL.createObjectURL(file);
       } else {
-        // 静态 Mock 模式
-        const url = `vault/${targetNode.path}`;
-        const response = await fetch(encodeURI(url));
-        if (!response.ok) throw new Error('Image fetch failed');
-        const blob = await response.blob();
+        const cleanPath = targetNode.path.startsWith('/') ? targetNode.path.slice(1) : targetNode.path;
+        const url = `vault/${encodeURI(cleanPath)}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Image fetch failed: ${response.status}`);
+        let blob = await response.blob();
+        if (targetName.toLowerCase().endsWith('.svg') && !blob.type.includes('svg')) {
+            blob = new Blob([blob], { type: 'image/svg+xml' });
+        }
         return URL.createObjectURL(blob);
       }
     } catch (e) {
@@ -168,7 +262,7 @@ const App: React.FC = () => {
           </div>
           <h1 className="text-2xl font-bold text-gray-800 mb-2">Obsidian Reader</h1>
           <p className="text-gray-500 mb-8">
-            打开你的本地 Obsidian 仓库 (Vault)，享受类似语雀的阅读体验。数据仅在本地处理，安全无忧。
+            打开你的本地 Obsidian 仓库 (Vault)，享受类似语雀的阅读体验。支持创建、编辑和管理笔记。
           </p>
           
           <div className="space-y-4">
@@ -227,6 +321,9 @@ const App: React.FC = () => {
           onSelectFile={handleSelectFile}
           onOpenSettings={() => setCurrentView('settings')}
           hiddenPaths={settings.attachmentPath ? [settings.attachmentPath] : []}
+          onCreateFile={handleCreateFile}
+          onCreateFolder={handleCreateFolder}
+          onDeleteNode={handleDeleteNode}
         />
       </div>
 
@@ -252,6 +349,7 @@ const App: React.FC = () => {
               setCurrentView('reader');
             }}
             onBack={() => setCurrentView('reader')}
+            currentVaultId={currentVaultId || undefined}
           />
         ) : (
           <MarkdownViewer 
@@ -259,6 +357,8 @@ const App: React.FC = () => {
              fileName={selectedFile?.name || ''} 
              onLinkClick={handleLinkClick}
              onResolveImage={handleResolveImage}
+             onSave={handleSaveFile}
+             isEditable={!!selectedFile && selectedFile.kind === FileType.FILE}
            />
         )}
       </div>
